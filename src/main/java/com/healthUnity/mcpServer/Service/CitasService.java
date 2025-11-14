@@ -1,6 +1,5 @@
 package com.healthUnity.mcpServer.Service;
 
-
 import com.healthUnity.mcpServer.DTO.Response.CitaResponseDTO;
 import com.healthUnity.mcpServer.DTO.Response.ResponseDTO;
 import com.healthUnity.mcpServer.DTO.Response.DoctorDisponibleDTO;
@@ -18,14 +17,17 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
+@Transactional(readOnly = true)
 public class CitasService {
     private final CitasRepository citasRepository;
     private final DoctorRepository doctorRepository;
@@ -66,9 +68,8 @@ public class CitasService {
 
         LocalDate fechaCita = LocalDate.parse(fecha);
         LocalTime horaCita = LocalTime.parse(hora);
-        int diaSemana = fechaCita.getDayOfWeek().getValue(); // 1=Lunes, 7=Domingo
+        int diaSemana = fechaCita.getDayOfWeek().getValue();
 
-        // Buscar doctores por especialidad
         List<Doctores> doctores;
         if (especialidadNombre != null && !especialidadNombre.isEmpty()) {
             doctores = doctorRepository.findByEspecialidad_NombreContainingIgnoreCase(especialidadNombre);
@@ -78,11 +79,9 @@ public class CitasService {
 
         return doctores.stream()
                 .filter(doctor -> {
-                    // Verificar horarios del doctor
                     List<HorariosDoctor> horarios = horariosDoctorRepository
                             .findByDoctor_IdDoctorAndDiaSemana(doctor.getIdDoctor(), diaSemana);
 
-                    // Verificar si la hora está dentro de algún rango de horario
                     boolean tieneHorario = horarios.stream().anyMatch(h ->
                             !horaCita.isBefore(h.getHoraInicio()) &&
                                     !horaCita.isAfter(h.getHoraFin())
@@ -90,7 +89,6 @@ public class CitasService {
 
                     if (!tieneHorario) return false;
 
-                    // Verificar que no tenga cita a esa hora
                     List<Citas> citasExistentes = citasRepository
                             .findByDoctor_IdDoctorAndFechaAndHora(
                                     doctor.getIdDoctor(),
@@ -114,8 +112,7 @@ public class CitasService {
                         dto.setEspecialidad(doctor.getEspecialidad().getNombre());
                     }
 
-                    // Aquí podrías agregar el rating si lo tienes
-                    dto.setRating(4.5); // Por ahora un valor por defecto
+                    dto.setRating(4.5);
                     dto.setDisponible(true);
 
                     return dto;
@@ -136,6 +133,7 @@ public class CitasService {
         Usa esta función después de que el usuario confirme el doctor y horario,
         o cuando tengas todos los datos necesarios para crear la cita.
         """)
+    @Transactional
     public String crearCitaAutomatica(
             Long idPaciente,
             Long idDoctor,
@@ -156,7 +154,6 @@ public class CitasService {
         Doctores doctor = doctorOpt.get();
         Paciente paciente = pacienteOpt.get();
 
-        // Crear la cita
         Citas cita = new Citas();
         cita.setPaciente(paciente);
         cita.setDoctor(doctor);
@@ -207,7 +204,6 @@ public class CitasService {
         LocalDate fechaCita = LocalDate.parse(fecha);
         int diaSemana = fechaCita.getDayOfWeek().getValue();
 
-        // Obtener horarios del doctor para ese día
         List<HorariosDoctor> horarios = horariosDoctorRepository
                 .findByDoctor_IdDoctorAndDiaSemana(idDoctor, diaSemana);
 
@@ -215,7 +211,6 @@ public class CitasService {
             return List.of();
         }
 
-        // Obtener citas ya agendadas
         List<Citas> citasAgendadas = citasRepository
                 .findByDoctor_IdDoctorAndFecha(idDoctor, fechaCita);
 
@@ -223,7 +218,6 @@ public class CitasService {
                 .map(Citas::getHora)
                 .collect(Collectors.toList());
 
-        // Generar horarios disponibles (cada 30 minutos)
         return horarios.stream()
                 .flatMap(horario -> {
                     List<String> slots = new java.util.ArrayList<>();
@@ -241,27 +235,184 @@ public class CitasService {
                 .collect(Collectors.toList());
     }
 
-    // Métodos existentes...
-    public Citas getCitaProxima(Long idPaciente) {
-        Optional<Paciente> pacienteOptional = pacienteRepository.findById(idPaciente);
-        if (pacienteOptional.isEmpty()) {
-            throw new EntityNotFoundException("Paciente no encontrado");
-        }
+    @Tool(description = """
+        Obtiene la próxima cita programada del paciente.
+        Parámetros:
+        - idPaciente: ID del paciente
+        
+        Retorna información detallada de la próxima cita pendiente (fecha futura más cercana),
+        incluyendo datos del doctor, especialidad, fecha, hora y motivo.
+        Usa esta función cuando el usuario pregunte por su próxima cita o cita más cercana.
+        Si no hay citas futuras, retorna un mensaje indicándolo.
+        """)
+    public String consultarProximaCita(Long idPaciente) {
+        try {
+            Optional<Paciente> pacienteOpt = pacienteRepository.findById(idPaciente);
+            if (pacienteOpt.isEmpty()) {
+                return "❌ No se encontró el paciente con ID " + idPaciente;
+            }
 
-        Citas cita = citasRepository.findFirstByPaciente_IdPacienteAndFechaGreaterThanEqualOrderByFechaAscHoraAsc(
-                idPaciente,
-                LocalDate.now()
-        );
-        return cita;
+            Citas proximaCita = citasRepository.findFirstByPaciente_IdPacienteAndFechaGreaterThanEqualOrderByFechaAscHoraAsc(
+                    idPaciente,
+                    LocalDate.now()
+            );
+
+            if (proximaCita == null) {
+                return "📅 No tienes citas programadas próximamente.\n\n" +
+                        "¿Deseas agendar una nueva cita?";
+            }
+
+            String nombreDoctor = "Doctor";
+            String especialidad = "Medicina General";
+            String direccion = "Dirección no disponible";
+
+            if (proximaCita.getDoctor() != null) {
+                Doctores doctor = proximaCita.getDoctor();
+
+                if (doctor.getDetallesUsuario() != null) {
+                    String nombre = doctor.getDetallesUsuario().getNombre();
+                    String apellido = doctor.getDetallesUsuario().getApellido();
+                    if (nombre != null || apellido != null) {
+                        nombreDoctor = ((nombre != null ? nombre : "") + " " + (apellido != null ? apellido : "")).trim();
+                    }
+
+                    String dir = doctor.getDetallesUsuario().getDireccion();
+                    if (dir != null && !dir.trim().isEmpty()) {
+                        direccion = dir;
+                    }
+                }
+
+                if (doctor.getEspecialidad() != null && doctor.getEspecialidad().getNombre() != null) {
+                    especialidad = doctor.getEspecialidad().getNombre();
+                }
+            }
+
+            DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+            String fechaFormateada = proximaCita.getFecha().format(dateFormatter);
+
+            return String.format(
+                    "📅 Tu próxima cita:\n\n" +
+                            "• Doctor: %s\n" +
+                            "• Especialidad: %s\n" +
+                            "• Fecha: %s\n" +
+                            "• Hora: %s\n" +
+                            "• Motivo: %s\n" +
+                            "• Estado: %s\n" +
+                            "• Dirección: %s\n\n" +
+                            "💡 Recuerda llegar 10 minutos antes de tu cita.",
+                    nombreDoctor,
+                    especialidad,
+                    fechaFormateada,
+                    proximaCita.getHora() != null ? proximaCita.getHora().toString() : "No especificada",
+                    proximaCita.getRazon() != null ? proximaCita.getRazon() : "Consulta general",
+                    proximaCita.getEstado() != null ? proximaCita.getEstado() : "pendiente",
+                    direccion
+            );
+        } catch (Exception e) {
+            return "❌ Error al consultar la próxima cita: " + e.getMessage();
+        }
     }
 
-    public List<CitaResponseDTO> getCitas(Long idPaciente, String estado) {
-        Paciente paciente = pacienteRepository.findById(idPaciente)
-                .orElseThrow(() -> new EntityNotFoundException("Paciente no encontrado"));
-        List<Citas> citas = citasRepository.findByPacienteAndEstado(idPaciente, estado);
-        return citas.stream()
-                .map(this::convertToDTO)
-                .collect(Collectors.toList());
+    @Tool(description = """
+        Consulta las citas del paciente filtradas por estado.
+        Parámetros:
+        - idPaciente: ID del paciente
+        - estado: estado de las citas a consultar. Valores válidos:
+          * 'pendiente' - citas programadas
+          * 'completada' - citas finalizadas
+          * 'cancelada' - citas canceladas
+          * null o vacío - todas las citas
+        
+        Retorna una lista detallada de las citas que coincidan con el estado solicitado,
+        incluyendo información del doctor, fecha, hora, especialidad y motivo.
+        Usa esta función cuando el usuario pregunte por sus citas con un estado específico.
+        """)
+    public String consultarCitasPorEstado(Long idPaciente, String estado) {
+        try {
+            Optional<Paciente> pacienteOpt = pacienteRepository.findById(idPaciente);
+            if (pacienteOpt.isEmpty()) {
+                return "❌ No se encontró el paciente con ID " + idPaciente;
+            }
+
+            List<Citas> citas = citasRepository.findByPacienteAndEstado(idPaciente, estado);
+
+            if (citas == null || citas.isEmpty()) {
+                String estadoTexto = (estado == null || estado.isEmpty()) ? "" : " " + estado + "s";
+                return String.format("📋 No tienes citas%s registradas.", estadoTexto);
+            }
+
+            StringBuilder resultado = new StringBuilder();
+            String estadoTitulo;
+            if (estado == null || estado.isEmpty()) {
+                estadoTitulo = "Todas";
+            } else {
+                switch (estado.toLowerCase()) {
+                    case "pendiente":
+                        estadoTitulo = "Pendientes";
+                        break;
+                    case "completada":
+                        estadoTitulo = "Completadas";
+                        break;
+                    case "cancelada":
+                        estadoTitulo = "Canceladas";
+                        break;
+                    default:
+                        estadoTitulo = "Todas";
+                }
+            }
+
+            resultado.append(String.format("📋 Citas %s (%d):\n\n", estadoTitulo, citas.size()));
+
+            DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+
+            for (int i = 0; i < citas.size(); i++) {
+                Citas cita = citas.get(i);
+
+                String nombreDoctor = "Doctor";
+                String especialidad = "Medicina General";
+
+                if (cita.getDoctor() != null) {
+                    Doctores doctor = cita.getDoctor();
+
+                    if (doctor.getDetallesUsuario() != null) {
+                        String nombre = doctor.getDetallesUsuario().getNombre();
+                        String apellido = doctor.getDetallesUsuario().getApellido();
+                        if (nombre != null || apellido != null) {
+                            nombreDoctor = ((nombre != null ? nombre : "") + " " + (apellido != null ? apellido : "")).trim();
+                        }
+                    }
+
+                    if (doctor.getEspecialidad() != null && doctor.getEspecialidad().getNombre() != null) {
+                        especialidad = doctor.getEspecialidad().getNombre();
+                    }
+                }
+
+                String fechaFormateada = cita.getFecha().format(dateFormatter);
+
+                resultado.append(String.format(
+                        "%d. 📅 %s\n" +
+                                "   • Doctor: %s (%s)\n" +
+                                "   • Hora: %s\n" +
+                                "   • Motivo: %s\n" +
+                                "   • Estado: %s\n",
+                        i + 1,
+                        fechaFormateada,
+                        nombreDoctor,
+                        especialidad,
+                        cita.getHora() != null ? cita.getHora().toString() : "No especificada",
+                        cita.getRazon() != null ? cita.getRazon() : "Consulta general",
+                        cita.getEstado() != null ? cita.getEstado() : "pendiente"
+                ));
+
+                if (i < citas.size() - 1) {
+                    resultado.append("\n");
+                }
+            }
+
+            return resultado.toString();
+        } catch (Exception e) {
+            return "❌ Error al consultar las citas: " + e.getMessage();
+        }
     }
 
     private CitaResponseDTO convertToDTO(Citas cita) {
