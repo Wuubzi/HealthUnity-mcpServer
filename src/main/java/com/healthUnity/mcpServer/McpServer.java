@@ -1,6 +1,7 @@
 package com.healthUnity.mcpServer;
 
 import com.healthUnity.mcpServer.Service.CitasService;
+import com.healthUnity.mcpServer.Service.DoctorService;
 import com.healthUnity.mcpServer.Service.EspecialidadesService;
 import com.healthUnity.mcpServer.Service.PacienteService;
 import org.springframework.ai.tool.ToolCallbackProvider;
@@ -18,7 +19,7 @@ public class McpServer {
 
 
     @Bean
-    public ToolCallbackProvider ejemploTools(CitasService citasService, EspecialidadesService especialidadesService, PacienteService pacienteService){
-        return MethodToolCallbackProvider.builder().toolObjects(especialidadesService,citasService,pacienteService).build();
+    public ToolCallbackProvider ejemploTools(CitasService citasService, DoctorService doctorService, EspecialidadesService especialidadesService, PacienteService pacienteService){
+        return MethodToolCallbackProvider.builder().toolObjects(especialidadesService, doctorService,citasService,pacienteService).build();
     }
 }

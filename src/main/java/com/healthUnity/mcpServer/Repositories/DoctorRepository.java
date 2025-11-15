@@ -14,166 +14,232 @@ import java.util.List;
 public interface DoctorRepository extends JpaRepository<Doctores, Long> {
 
     // ============================================
-    // MÉTODOS DE BÚSQUEDA PAGINADA CON RATINGS
+    // CONSULTAS PAGINADAS IGUAL A LA VERSION BUENA
     // ============================================
 
-    /**
-     * Obtiene todos los doctores con su rating y número de reviews
-     * Ordena por rating, reviews o relevancia según el parámetro orderBy
-     */
-    @Query(value = "SELECT d.id_doctor, du.nombre, du.apellido, du.url_imagen, " +
-            "e.nombre as especialidad, COALESCE(AVG(od.estrellas), 0) as rating, " +
-            "COUNT(od.id_opinion) as reviews " +
-            "FROM doctores d " +
-            "INNER JOIN detalles_usuario du ON d.id_detalles_usuario = du.id_detalles_usuario " +
-            "LEFT JOIN especialidad e ON d.id_especialidad = e.id_especialidad " +
-            "LEFT JOIN opiniones_doctores od ON d.id_doctor = od.id_doctor " +
-            "GROUP BY d.id_doctor, du.nombre, du.apellido, du.url_imagen, e.nombre " +
-            "ORDER BY " +
-            "CASE WHEN :orderBy = 'rating' THEN COALESCE(AVG(od.estrellas), 0) END DESC, " +
-            "CASE WHEN :orderBy = 'reviews' THEN COUNT(od.id_opinion) END DESC, " +
-            "CASE WHEN :orderBy = 'relevancia' THEN (COALESCE(AVG(od.estrellas), 0) * 0.7 + (COUNT(od.id_opinion) * 0.3)) END DESC",
+    @Query(value = """
+        SELECT 
+            d.id_doctor,
+            du.nombre,
+            du.apellido,
+            du.url_imagen,
+            e.nombre AS especialidad,
+            COALESCE(AVG(od.estrellas), 0.0) AS rating,
+            COALESCE(COUNT(od.id_opinion_doctor), 0) AS reviews
+        FROM doctores d
+        JOIN detalles_usuario du ON d.id_detalle_usuario = du.id_detalle_usuario
+        JOIN especialidades e ON d.id_especialidad = e.id_especialidad
+        LEFT JOIN opiniones_doctores od ON d.id_doctor = od.id_doctor
+        GROUP BY 
+            d.id_doctor, du.nombre, du.apellido, du.url_imagen, e.nombre, d.experiencia
+        ORDER BY 
+            CASE WHEN :orderBy = 'rating' THEN COALESCE(AVG(od.estrellas), 0.0) END DESC,
+            CASE WHEN :orderBy = 'reviews' THEN COALESCE(COUNT(od.id_opinion_doctor), 0) END DESC,
+            CASE WHEN :orderBy = 'relevancia' THEN d.experiencia END DESC
+        """,
+            countQuery = """
+        SELECT COUNT(DISTINCT d.id_doctor)
+        FROM doctores d
+        """,
             nativeQuery = true)
-    Page<Object[]> findAllDoctores(@Param("orderBy") String orderBy, Pageable pageable);
-
-    /**
-     * Busca doctores por nombre (nombre o apellido)
-     */
-    @Query(value = "SELECT d.id_doctor, du.nombre, du.apellido, du.url_imagen, " +
-            "e.nombre as especialidad, COALESCE(AVG(od.estrellas), 0) as rating, " +
-            "COUNT(od.id_opinion) as reviews " +
-            "FROM doctores d " +
-            "INNER JOIN detalles_usuario du ON d.id_detalles_usuario = du.id_detalles_usuario " +
-            "LEFT JOIN especialidad e ON d.id_especialidad = e.id_especialidad " +
-            "LEFT JOIN opiniones_doctores od ON d.id_doctor = od.id_doctor " +
-            "WHERE LOWER(CONCAT(du.nombre, ' ', du.apellido)) LIKE LOWER(CONCAT('%', :search, '%')) " +
-            "GROUP BY d.id_doctor, du.nombre, du.apellido, du.url_imagen, e.nombre " +
-            "ORDER BY " +
-            "CASE WHEN :orderBy = 'rating' THEN COALESCE(AVG(od.estrellas), 0) END DESC, " +
-            "CASE WHEN :orderBy = 'reviews' THEN COUNT(od.id_opinion) END DESC, " +
-            "CASE WHEN :orderBy = 'relevancia' THEN (COALESCE(AVG(od.estrellas), 0) * 0.7 + (COUNT(od.id_opinion) * 0.3)) END DESC",
-            nativeQuery = true)
-    Page<Object[]> findByNombreContaining(@Param("search") String search,
-                                          @Param("orderBy") String orderBy,
-                                          Pageable pageable);
-
-    /**
-     * Busca doctores por especialidad
-     */
-    @Query(value = "SELECT d.id_doctor, du.nombre, du.apellido, du.url_imagen, " +
-            "e.nombre as especialidad, COALESCE(AVG(od.estrellas), 0) as rating, " +
-            "COUNT(od.id_opinion) as reviews " +
-            "FROM doctores d " +
-            "INNER JOIN detalles_usuario du ON d.id_detalles_usuario = du.id_detalles_usuario " +
-            "LEFT JOIN especialidad e ON d.id_especialidad = e.id_especialidad " +
-            "LEFT JOIN opiniones_doctores od ON d.id_doctor = od.id_doctor " +
-            "WHERE d.id_especialidad = :especialidadId " +
-            "GROUP BY d.id_doctor, du.nombre, du.apellido, du.url_imagen, e.nombre " +
-            "ORDER BY " +
-            "CASE WHEN :orderBy = 'rating' THEN COALESCE(AVG(od.estrellas), 0) END DESC, " +
-            "CASE WHEN :orderBy = 'reviews' THEN COUNT(od.id_opinion) END DESC, " +
-            "CASE WHEN :orderBy = 'relevancia' THEN (COALESCE(AVG(od.estrellas), 0) * 0.7 + (COUNT(od.id_opinion) * 0.3)) END DESC",
-            nativeQuery = true)
-    Page<Object[]> findByEspecialidadId(@Param("especialidadId") Long especialidadId,
-                                        @Param("orderBy") String orderBy,
-                                        Pageable pageable);
-
-    /**
-     * Busca doctores por nombre y especialidad combinados
-     */
-    @Query(value = "SELECT d.id_doctor, du.nombre, du.apellido, du.url_imagen, " +
-            "e.nombre as especialidad, COALESCE(AVG(od.estrellas), 0) as rating, " +
-            "COUNT(od.id_opinion) as reviews " +
-            "FROM doctores d " +
-            "INNER JOIN detalles_usuario du ON d.id_detalles_usuario = du.id_detalles_usuario " +
-            "LEFT JOIN especialidad e ON d.id_especialidad = e.id_especialidad " +
-            "LEFT JOIN opiniones_doctores od ON d.id_doctor = od.id_doctor " +
-            "WHERE LOWER(CONCAT(du.nombre, ' ', du.apellido)) LIKE LOWER(CONCAT('%', :search, '%')) " +
-            "AND d.id_especialidad = :especialidadId " +
-            "GROUP BY d.id_doctor, du.nombre, du.apellido, du.url_imagen, e.nombre " +
-            "ORDER BY " +
-            "CASE WHEN :orderBy = 'rating' THEN COALESCE(AVG(od.estrellas), 0) END DESC, " +
-            "CASE WHEN :orderBy = 'reviews' THEN COUNT(od.id_opinion) END DESC, " +
-            "CASE WHEN :orderBy = 'relevancia' THEN (COALESCE(AVG(od.estrellas), 0) * 0.7 + (COUNT(od.id_opinion) * 0.3)) END DESC",
-            nativeQuery = true)
-    Page<Object[]> findByNombreAndEspecialidad(@Param("search") String search,
-                                               @Param("especialidadId") Long especialidadId,
-                                               @Param("orderBy") String orderBy,
-                                               Pageable pageable);
+    Page<Object[]> findAllDoctores(
+            @Param("orderBy") String orderBy,
+            Pageable pageable
+    );
 
     // ============================================
-    // MÉTODOS PARA SISTEMA DE CITAS
+    // BUSQUEDA POR NOMBRE
     // ============================================
 
-    /**
-     * Busca doctores por nombre de especialidad (case insensitive)
-     * Útil para búsqueda en lenguaje natural: "cardiólogo", "pediatra", etc.
-     */
+    @Query(value = """
+        SELECT 
+            d.id_doctor,
+            du.nombre,
+            du.apellido,
+            du.url_imagen,
+            e.nombre AS especialidad,
+            COALESCE(AVG(od.estrellas), 0.0) AS rating,
+            COALESCE(COUNT(od.id_opinion_doctor), 0) AS reviews
+        FROM doctores d
+        JOIN detalles_usuario du ON d.id_detalle_usuario = du.id_detalle_usuario
+        JOIN especialidades e ON d.id_especialidad = e.id_especialidad
+        LEFT JOIN opiniones_doctores od ON d.id_doctor = od.id_doctor
+        WHERE 
+            LOWER(du.nombre) LIKE LOWER(CONCAT('%', :search, '%'))
+            OR LOWER(du.apellido) LIKE LOWER(CONCAT('%', :search, '%'))
+            OR LOWER(CONCAT(du.nombre, ' ', du.apellido)) LIKE LOWER(CONCAT('%', :search, '%'))
+        GROUP BY 
+            d.id_doctor, du.nombre, du.apellido, du.url_imagen, e.nombre, d.experiencia
+        ORDER BY 
+            CASE WHEN :orderBy = 'rating' THEN COALESCE(AVG(od.estrellas), 0.0) END DESC,
+            CASE WHEN :orderBy = 'reviews' THEN COALESCE(COUNT(od.id_opinion_doctor), 0) END DESC,
+            CASE WHEN :orderBy = 'relevancia' THEN d.experiencia END DESC
+        """,
+            countQuery = """
+        SELECT COUNT(DISTINCT d.id_doctor)
+        FROM doctores d
+        JOIN detalles_usuario du ON d.id_detalle_usuario = du.id_detalle_usuario
+        WHERE LOWER(du.nombre) LIKE LOWER(CONCAT('%', :search, '%'))
+            OR LOWER(du.apellido) LIKE LOWER(CONCAT('%', :search, '%'))
+        """,
+            nativeQuery = true)
+    Page<Object[]> findByNombreContaining(
+            @Param("search") String search,
+            @Param("orderBy") String orderBy,
+            Pageable pageable
+    );
+
+    // ============================================
+    // FILTRO POR ESPECIALIDAD
+    // ============================================
+
+    @Query(value = """
+        SELECT 
+            d.id_doctor,
+            du.nombre,
+            du.apellido,
+            du.url_imagen,
+            e.nombre AS especialidad,
+            COALESCE(AVG(od.estrellas), 0.0) AS rating,
+            COALESCE(COUNT(od.id_opinion_doctor), 0) AS reviews
+        FROM doctores d
+        JOIN detalles_usuario du ON d.id_detalle_usuario = du.id_detalle_usuario
+        JOIN especialidades e ON d.id_especialidad = e.id_especialidad
+        LEFT JOIN opiniones_doctores od ON d.id_doctor = od.id_doctor
+        WHERE e.id_especialidad = :especialidadId
+        GROUP BY 
+            d.id_doctor, du.nombre, du.apellido, du.url_imagen, e.nombre, d.experiencia
+        ORDER BY 
+            CASE WHEN :orderBy = 'rating' THEN COALESCE(AVG(od.estrellas), 0.0) END DESC,
+            CASE WHEN :orderBy = 'reviews' THEN COALESCE(COUNT(od.id_opinion_doctor), 0) END DESC,
+            CASE WHEN :orderBy = 'relevancia' THEN d.experiencia END DESC
+        """,
+            countQuery = """
+        SELECT COUNT(DISTINCT d.id_doctor)
+        FROM doctores d
+        WHERE d.id_especialidad = :especialidadId
+        """,
+            nativeQuery = true)
+    Page<Object[]> findByEspecialidadId(
+            @Param("especialidadId") Long especialidadId,
+            @Param("orderBy") String orderBy,
+            Pageable pageable
+    );
+
+    // ============================================
+    // BUSCAR POR NOMBRE + ESPECIALIDAD
+    // ============================================
+
+    @Query(value = """
+        SELECT 
+            d.id_doctor,
+            du.nombre,
+            du.apellido,
+            du.url_imagen,
+            e.nombre AS especialidad,
+            COALESCE(AVG(od.estrellas), 0.0) AS rating,
+            COALESCE(COUNT(od.id_opinion_doctor), 0) AS reviews
+        FROM doctores d
+        JOIN detalles_usuario du ON d.id_detalle_usuario = du.id_detalle_usuario
+        JOIN especialidades e ON d.id_especialidad = e.id_especialidad
+        LEFT JOIN opiniones_doctores od ON d.id_doctor = od.id_doctor
+        WHERE 
+            (LOWER(du.nombre) LIKE LOWER(CONCAT('%', :search, '%'))
+             OR LOWER(du.apellido) LIKE LOWER(CONCAT('%', :search, '%'))
+             OR LOWER(CONCAT(du.nombre, ' ', du.apellido)) LIKE LOWER(CONCAT('%', :search, '%')))
+            AND e.id_especialidad = :especialidadId
+        GROUP BY 
+            d.id_doctor, du.nombre, du.apellido, du.url_imagen, e.nombre, d.experiencia
+        ORDER BY 
+            CASE WHEN :orderBy = 'rating' THEN COALESCE(AVG(od.estrellas), 0.0) END DESC,
+            CASE WHEN :orderBy = 'reviews' THEN COALESCE(COUNT(od.id_opinion_doctor), 0) END DESC,
+            CASE WHEN :orderBy = 'relevancia' THEN d.experiencia END DESC
+        """,
+            countQuery = """
+        SELECT COUNT(DISTINCT d.id_doctor)
+        FROM doctores d
+        JOIN detalles_usuario du ON d.id_detalle_usuario = du.id_detalle_usuario
+        WHERE 
+            (LOWER(du.nombre) LIKE LOWER(CONCAT('%', :search, '%'))
+             OR LOWER(du.apellido) LIKE LOWER(CONCAT('%', :search, '%')))
+            AND d.id_especialidad = :especialidadId
+        """,
+            nativeQuery = true)
+    Page<Object[]> findByNombreAndEspecialidad(
+            @Param("search") String search,
+            @Param("especialidadId") Long especialidadId,
+            @Param("orderBy") String orderBy,
+            Pageable pageable
+    );
+
+    // ============================================
+    // CONSULTAS EXTRA
+    // ============================================
+
     List<Doctores> findByEspecialidad_NombreContainingIgnoreCase(String especialidadNombre);
 
-
-
-    /**
-     * Busca doctores con mejor rating de una especialidad específica
-     * Útil para recomendar los mejores doctores
-     */
-    @Query(value = "SELECT d.id_doctor, du.nombre, du.apellido, du.url_imagen, " +
-            "e.nombre as especialidad, COALESCE(AVG(od.estrellas), 0) as rating, " +
-            "COUNT(od.id_opinion) as reviews " +
-            "FROM doctores d " +
-            "INNER JOIN detalles_usuario du ON d.id_detalles_usuario = du.id_detalles_usuario " +
-            "LEFT JOIN especialidad e ON d.id_especialidad = e.id_especialidad " +
-            "LEFT JOIN opiniones_doctores od ON d.id_doctor = od.id_doctor " +
-            "WHERE LOWER(e.nombre) LIKE LOWER(CONCAT('%', :especialidad, '%')) " +
-            "GROUP BY d.id_doctor, du.nombre, du.apellido, du.url_imagen, e.nombre " +
-            "HAVING COUNT(od.id_opinion) > 0 " +
-            "ORDER BY COALESCE(AVG(od.estrellas), 0) DESC " +
-            "LIMIT :limit",
-            nativeQuery = true)
+    @Query(value = """
+        SELECT 
+            d.id_doctor,
+            du.nombre,
+            du.apellido,
+            du.url_imagen,
+            e.nombre AS especialidad,
+            COALESCE(AVG(od.estrellas), 0.0) AS rating,
+            COALESCE(COUNT(od.id_opinion_doctor), 0) AS reviews
+        FROM doctores d
+        JOIN detalles_usuario du ON d.id_detalle_usuario = du.id_detalle_usuario
+        JOIN especialidades e ON d.id_especialidad = e.id_especialidad
+        LEFT JOIN opiniones_doctores od ON d.id_doctor = od.id_doctor
+        WHERE LOWER(e.nombre) LIKE LOWER(CONCAT('%', :especialidad, '%'))
+        GROUP BY 
+            d.id_doctor, du.nombre, du.apellido, du.url_imagen, e.nombre, d.experiencia
+        HAVING COUNT(od.id_opinion_doctor) > 0
+        ORDER BY COALESCE(AVG(od.estrellas), 0.0) DESC
+        LIMIT :limit
+        """, nativeQuery = true)
     List<Object[]> findTopDoctoresPorEspecialidad(
             @Param("especialidad") String especialidad,
             @Param("limit") int limit
     );
 
-    /**
-     * Cuenta cuántos doctores hay de una especialidad
-     */
-    @Query("SELECT COUNT(d) FROM Doctores d " +
-            "WHERE LOWER(d.especialidad.nombre) LIKE LOWER(CONCAT('%', :especialidad, '%'))")
+    @Query("SELECT COUNT(d) FROM Doctores d WHERE LOWER(d.especialidad.nombre) LIKE LOWER(CONCAT('%', :especialidad, '%'))")
     Long countByEspecialidad(@Param("especialidad") String especialidad);
 
-    /**
-     * Busca doctores que NO tengan citas en una fecha y hora específica
-     * Útil para encontrar doctores realmente disponibles
-     */
-    @Query("SELECT DISTINCT d FROM Doctores d " +
-            "WHERE d.idDoctor NOT IN (" +
-            "  SELECT c.doctor.idDoctor FROM Citas c " +
-            "  WHERE c.fecha = :fecha " +
-            "  AND c.hora = :hora " +
-            "  AND c.estado != 'cancelada'" +
-            ")")
+    // ============================================
+    // DOCTORES SIN CITAS Y DISPONIBLES
+    // ============================================
+
+    @Query("""
+        SELECT DISTINCT d FROM Doctores d
+        WHERE d.idDoctor NOT IN (
+          SELECT c.doctor.idDoctor FROM Citas c
+          WHERE c.fecha = :fecha
+          AND c.hora = :hora
+          AND c.estado != 'cancelada'
+        )
+        """)
     List<Doctores> findDoctoresSinCitasEnFechaHora(
             @Param("fecha") java.time.LocalDate fecha,
             @Param("hora") java.time.LocalTime hora
     );
 
-    /**
-     * Busca doctores por especialidad que NO tengan citas en una fecha y hora
-     * Combina disponibilidad de horario con ausencia de citas
-     */
-    @Query("SELECT DISTINCT d FROM Doctores d " +
-            "JOIN d.especialidad e " +
-            "WHERE LOWER(e.nombre) LIKE LOWER(CONCAT('%', :especialidad, '%')) " +
-            "AND d.idDoctor NOT IN (" +
-            "  SELECT c.doctor.idDoctor FROM Citas c " +
-            "  WHERE c.fecha = :fecha " +
-            "  AND c.hora = :hora " +
-            "  AND c.estado != 'cancelada'" +
-            ")")
+    @Query("""
+        SELECT DISTINCT d FROM Doctores d
+        JOIN d.especialidad e
+        WHERE LOWER(e.nombre) LIKE LOWER(CONCAT('%', :especialidad, '%'))
+        AND d.idDoctor NOT IN (
+          SELECT c.doctor.idDoctor FROM Citas c
+          WHERE c.fecha = :fecha
+          AND c.hora = :hora
+          AND c.estado != 'cancelada'
+        )
+        """)
     List<Doctores> findDoctoresDisponiblesPorEspecialidadFechaHora(
             @Param("especialidad") String especialidad,
             @Param("fecha") java.time.LocalDate fecha,
             @Param("hora") java.time.LocalTime hora
     );
+
+
 }

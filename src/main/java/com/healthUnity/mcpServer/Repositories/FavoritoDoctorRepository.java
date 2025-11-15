@@ -37,4 +37,7 @@ public interface FavoritoDoctorRepository extends JpaRepository<FavoritosDoctore
             fd.id_favorito_doctor, d.id_doctor, du.nombre, du.apellido, du.url_imagen, e.nombre
         """, nativeQuery = true)
     List<FavoritoDoctorProjection> findAllFavoritosDtoByPacienteId(@Param("idPaciente") Long idPaciente);
+
+    // En FavoritoDoctorRepository.java
+    boolean existsByDoctorIdDoctorAndPacienteIdPaciente(Long idDoctor, Long idPaciente);
 }
