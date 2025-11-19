@@ -411,7 +411,7 @@ public class CitasService {
             if (emailPaciente != null && !emailPaciente.isEmpty()) {
                 try {
                     gmailService.sendConfirmAppointment(
-                            emailPaciente,
+                            emailPaciente,  
                             nombrePaciente,
                             nombreDoctor,
                             direccionDoctor,
